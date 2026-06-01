@@ -1,0 +1,47 @@
+[
+  {
+    "test_id": "ingestion_persisted_001",
+    "category": "ingestion_idempotency",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §7.1-§7.3: a first POST /v1/ingest with a fresh (session_id, batch_sequence) persists the raw envelope byte-faithfully and returns 200 status 'persisted'. The body is the raw octet-stream (no JSON wrapper, no base64); body_hex is the lowercase-hex encoding of the 33-byte minimum envelope. SHAPE vector — full-pipeline dedupe behaviour is independently verified at Groups 12/13 per §17.4.",
+    "input": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/ingest",
+        "headers": { "Content-Type": "application/octet-stream", "X-Cephios-API-Version": "1.0", "X-Cephios-Session-Id": "018f0c00-0000-7000-8000-000000000001", "X-Cephios-Batch-Sequence": "0" },
+        "body_hex": "ce0f010104050607080910111213141516010203040506070809101112131415ff"
+      }
+    },
+    "expected_output": {
+      "response": {
+        "status": 200,
+        "headers": { "X-Cephios-Supported-Versions": "1.0" },
+        "body": { "status": "persisted", "received_at": "2026-05-28T14:30:00Z", "envelope_byte_count": 33 }
+      }
+    },
+    "notes": "received_at is sourced from ingested_batch_keys.first_seen_at per R-G7-DEDUP-TABLE."
+  },
+  {
+    "test_id": "ingestion_deduplicated_001",
+    "category": "ingestion_idempotency",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §7.2-§7.3: a second POST with the same (session_id, batch_sequence) as ingestion_persisted_001 returns 200 status 'deduplicated' (not an error, and no second payload INSERT). The idempotency key is structural (the ingested_batch_keys primary key). SHAPE vector.",
+    "input": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/ingest",
+        "headers": { "Content-Type": "application/octet-stream", "X-Cephios-API-Version": "1.0", "X-Cephios-Session-Id": "018f0c00-0000-7000-8000-000000000001", "X-Cephios-Batch-Sequence": "0" },
+        "body_hex": "ce0f010104050607080910111213141516010203040506070809101112131415ff",
+        "preconditions": ["ingestion_persisted_001 was already accepted for this (session_id, batch_sequence)"]
+      }
+    },
+    "expected_output": {
+      "response": {
+        "status": 200,
+        "headers": { "X-Cephios-Supported-Versions": "1.0" },
+        "body": { "status": "deduplicated", "originally_persisted_at": "2026-05-28T14:30:00Z", "envelope_byte_count": 33 }
+      }
+    },
+    "notes": "originally_persisted_at echoes the first call's first_seen_at; no second sample_batches INSERT occurs."
+  }
+]

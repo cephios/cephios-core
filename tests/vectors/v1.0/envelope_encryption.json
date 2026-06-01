@@ -1,0 +1,91 @@
+[
+  {
+    "test_id": "envelope_encrypt_construct_001",
+    "category": "envelope_encryption",
+    "protocol_version": "1.0",
+    "description": "AES-256-GCM envelope construction (CONTRACT_SPEC.md §6.4) with a pinned 12-byte nonce so the output is reproducible. 50-byte plaintext yields a 82-byte envelope (16 header + 50 ciphertext + 16 auth_tag).",
+    "input": {
+      "operation": "construct",
+      "dek_hex": "4242424242424242424242424242424242424242424242424242424242424242",
+      "nonce_hex": "010101010101010101010101",
+      "plaintext_utf8": "Cephios test plaintext: sample batch payload bytes"
+    },
+    "expected_output": {
+      "envelope_hex": "ce0f01010101010101010101010101016eccc66ffd3bf2edab339ab8c767d7aac3ed88a6f5d8ed233b3d5d787e23d5b70eaa165b506980beead94cb931012a885a97fee3bdc9c8cdb2ff2fff2f18f577a0ef",
+      "envelope_byte_count": 82
+    },
+    "notes": "Bootstrap byte pinned from the reference Go implementation (internal/envelope/Construct) per CS §17.4. Header = magic CE0F + version 01 + alg_id 01 + nonce; AAD = first 16 bytes."
+  },
+  {
+    "test_id": "envelope_decrypt_deconstruct_001",
+    "category": "envelope_encryption",
+    "protocol_version": "1.0",
+    "description": "AES-256-GCM envelope deconstruction (CONTRACT_SPEC.md §6.5): the construct_001 envelope decrypts under the same DEK to the original plaintext.",
+    "input": {
+      "operation": "deconstruct",
+      "envelope_hex": "ce0f01010101010101010101010101016eccc66ffd3bf2edab339ab8c767d7aac3ed88a6f5d8ed233b3d5d787e23d5b70eaa165b506980beead94cb931012a885a97fee3bdc9c8cdb2ff2fff2f18f577a0ef",
+      "dek_hex": "4242424242424242424242424242424242424242424242424242424242424242"
+    },
+    "expected_output": {
+      "plaintext_utf8": "Cephios test plaintext: sample batch payload bytes"
+    },
+    "notes": "Round-trips with envelope_encrypt_construct_001."
+  },
+  {
+    "test_id": "envelope_auth_failed_wrong_dek_001",
+    "category": "envelope_encryption",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §6.5 step 9: deconstructing the construct_001 envelope under the WRONG DEK fails AEAD tag verification and rejects with EnvelopeError 'authentication_failed'.",
+    "input": {
+      "operation": "deconstruct",
+      "envelope_hex": "ce0f01010101010101010101010101016eccc66ffd3bf2edab339ab8c767d7aac3ed88a6f5d8ed233b3d5d787e23d5b70eaa165b506980beead94cb931012a885a97fee3bdc9c8cdb2ff2fff2f18f577a0ef",
+      "dek_hex": "4343434343434343434343434343434343434343434343434343434343434343"
+    },
+    "expected_output": {
+      "error": {
+        "category": "EnvelopeError",
+        "code": "authentication_failed",
+        "http_status": 400
+      }
+    },
+    "notes": "CS §14.3 'authentication_failed'."
+  },
+  {
+    "test_id": "envelope_auth_failed_tampered_001",
+    "category": "envelope_encryption",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §6.5 step 9 + §6.1 AAD binding: the construct_001 envelope with the ciphertext byte at offset 20 flipped fails AEAD tag verification under the correct DEK.",
+    "input": {
+      "operation": "deconstruct",
+      "envelope_hex": "ce0f01010101010101010101010101016eccc66ffc3bf2edab339ab8c767d7aac3ed88a6f5d8ed233b3d5d787e23d5b70eaa165b506980beead94cb931012a885a97fee3bdc9c8cdb2ff2fff2f18f577a0ef",
+      "dek_hex": "4242424242424242424242424242424242424242424242424242424242424242"
+    },
+    "expected_output": {
+      "error": {
+        "category": "EnvelopeError",
+        "code": "authentication_failed",
+        "http_status": 400
+      }
+    },
+    "notes": "Byte at offset 20 (within the ciphertext region) is XOR-flipped relative to construct_001."
+  },
+  {
+    "test_id": "envelope_malformed_magic_001",
+    "category": "envelope_encryption",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §6.5 step 2: an envelope whose magic bytes are not 0xCE 0x0F rejects with EnvelopeError 'malformed' before any other validation.",
+    "input": {
+      "operation": "deconstruct",
+      "envelope_hex": "ffff010101010101010101010101010100000000000000000000000000000000",
+      "dek_hex": "4242424242424242424242424242424242424242424242424242424242424242"
+    },
+    "expected_output": {
+      "error": {
+        "category": "EnvelopeError",
+        "code": "malformed",
+        "http_status": 400
+      }
+    },
+    "notes": "CS §6.1:329 magic mismatch; CS §14.3 'malformed'."
+  }
+]

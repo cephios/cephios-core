@@ -1,0 +1,40 @@
+[
+  {
+    "test_id": "envelope_versioning_alg_unsupported_001",
+    "category": "envelope_versioning",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §6.5 step 4: an envelope with a valid magic + version but an inactive alg_id (0x10, a reserved PQC slot per §6.2) rejects with VersionError 'envelope_algorithm_unsupported'.",
+    "input": {
+      "operation": "deconstruct",
+      "envelope_hex": "ce0f011001010101010101010101010100000000000000000000000000000000",
+      "dek_hex": "4242424242424242424242424242424242424242424242424242424242424242"
+    },
+    "expected_output": {
+      "error": {
+        "category": "VersionError",
+        "code": "envelope_algorithm_unsupported",
+        "http_status": 426
+      }
+    },
+    "notes": "alg_id 0x10 is a reserved-not-active PQC registry slot per CS §6.2; CS §14.3 'envelope_algorithm_unsupported'."
+  },
+  {
+    "test_id": "envelope_versioning_version_unsupported_001",
+    "category": "envelope_versioning",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §6.5 step 3: an envelope with a valid magic but an unsupported version byte (0x02) rejects with VersionError 'envelope_version_unsupported' before the alg_id check.",
+    "input": {
+      "operation": "deconstruct",
+      "envelope_hex": "ce0f020101010101010101010101010100000000000000000000000000000000",
+      "dek_hex": "4242424242424242424242424242424242424242424242424242424242424242"
+    },
+    "expected_output": {
+      "error": {
+        "category": "VersionError",
+        "code": "envelope_version_unsupported",
+        "http_status": 426
+      }
+    },
+    "notes": "version 0x02 is a future incompatible layout per CS §6.1:330; CS §14.3 'envelope_version_unsupported'."
+  }
+]

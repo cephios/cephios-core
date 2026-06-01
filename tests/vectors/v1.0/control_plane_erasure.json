@@ -1,0 +1,51 @@
+[
+  {
+    "test_id": "subject_erase_success_001",
+    "category": "control_plane_erasure",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §10.5 (v1.4) DELETE /v1/subjects/{id} success: hard-deletes the subject's time-series payload, tombstones the subject + its sessions, retains consent + audit, and returns 200 with status 'erased' and the subjects.erased proof-row id as audit_entry_id. The tenant is taken from the authenticated session context, never the request. SHAPE vector.",
+    "input": {
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/subjects/018f0c00-0000-7000-8000-000000000001",
+        "headers": { "Authorization": "Bearer <opaque-session-token>" }
+      }
+    },
+    "expected_output": {
+      "response": {
+        "status": 200,
+        "body": {
+          "subject_id": "018f0c00-0000-7000-8000-000000000001",
+          "status": "erased",
+          "erased_at": "2026-05-31T16:00:00Z",
+          "audit_entry_id": "018f0c00-0000-7000-8000-0000000000ce"
+        }
+      }
+    },
+    "notes": "erased_at is the server-set subjects.deleted_at; audit_entry_id is the subjects.erased proof row returned as the erasure proof (CS §10.5 v1.4 / Group 10 Option A)."
+  },
+  {
+    "test_id": "subject_erase_already_erased_001",
+    "category": "control_plane_erasure",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §10.5 (v1.4) idempotent re-erasure: DELETE on an already-tombstoned subject returns 200 with status 'already_erased' and NO audit_entry_id (no new proof row) — deliberately not 404 and not 204. SHAPE vector.",
+    "input": {
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/subjects/018f0c00-0000-7000-8000-000000000001",
+        "headers": { "Authorization": "Bearer <opaque-session-token>" },
+        "preconditions": ["subject 018f0c00-0000-7000-8000-000000000001 was already erased"]
+      }
+    },
+    "expected_output": {
+      "response": {
+        "status": 200,
+        "body": {
+          "subject_id": "018f0c00-0000-7000-8000-000000000001",
+          "status": "already_erased"
+        }
+      }
+    },
+    "notes": "Idempotent: no new proof row is written on re-erasure (CS §10.5 v1.4)."
+  }
+]

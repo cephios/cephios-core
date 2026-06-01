@@ -1,0 +1,24 @@
+[
+  {
+    "test_id": "key_derivation_argon2id_001",
+    "category": "key_derivation",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §5.2 + §5.3 member key derivation: from (master_password, user_id) derive the 16-byte salt, run Argon2id with the §4.2 parameters to a 64-byte seed_material, and split it into the X25519 private-key seed [0:32] and the auth_verification_token [32:64]. The input fully determines the output (Argon2id is deterministic), but the expected bytes come from a NAMED EXTERNAL AUTHORITY (an offline Argon2id run), NOT from Cephios server code — the derivation is client-side per §5.3 and there is no server-side Argon2id (the auth-no-argon2 discipline; KC).",
+    "input": {
+      "master_password_utf8": "Cephios-Test-Vector-Pw-2026!",
+      "user_id": "018f0c00-0000-7000-8000-000000000020",
+      "salt_derivation_formula": "salt_bytes = SHA-256(\"cephios-member-salt-v1\" || user_id_utf8_bytes)[0:16]  (CS §5.2)",
+      "argon2id_params": { "type": "Argon2id", "m_kib": 65536, "t": 3, "p": 4, "output_length_bytes": 64 },
+      "output_split": "seed_material[0:32] = x25519_private_key_seed; seed_material[32:64] = auth_verification_token (CS §5.3)"
+    },
+    "expected_output": {
+      "salt_hex": "0f846bf5f4e488712a60889787658c7c",
+      "seed_material_hex": "854ac6b8353943db6a83b8f86c77def70dbe5f12cafdf70174299d07ad9d5ed9ecfb0152c4d907f50e48e3474aac67b8384f11ea88a3bbd8ec830467e62ae66a",
+      "x25519_private_key_seed_hex": "854ac6b8353943db6a83b8f86c77def70dbe5f12cafdf70174299d07ad9d5ed9",
+      "x25519_public_key_hex": "c35fb0109381229bbbdb4191b2c4276cafbc7567bf3c9d429a10e1c86855962a",
+      "auth_verification_token_hex": "ecfb0152c4d907f50e48e3474aac67b8384f11ea88a3bbd8ec830467e62ae66a",
+      "auth_verification_token_sha256_hex": "ff964e3f06498a0815942a35dcc0e681c40323c82f63ff5ecee25304f88aadfc"
+    },
+    "notes": "Expected bytes pinned from a NAMED EXTERNAL AUTHORITY — an offline Argon2id run (argon2-cffi 25.1.0 / cryptography 48.0.0) with the §4.2 parameters — per the CS §17.4 bootstrap (the Cephios cloud has no server-side Argon2id; auth-no-argon2 / KC). seed_material_hex = x25519_private_key_seed_hex || auth_verification_token_hex (64 bytes); the X25519 public key is derived from the seed per RFC 7748; auth_verification_token_sha256_hex = SHA-256(auth_verification_token) is the stored credential per CS §5.4 step 6. This is a BOOTSTRAP reference, NOT Go-oracle-verified — Group 12 (cephios-core, Python) MUST reproduce these bytes and Group 13 (@cephios/core) cross-verifies, per the §17.4 dual-source steady-state discipline. master_password and user_id are documented test values (no live secret)."
+  }
+]

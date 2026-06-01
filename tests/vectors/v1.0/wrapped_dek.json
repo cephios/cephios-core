@@ -1,0 +1,163 @@
+[
+  {
+    "test_id": "wrapped_dek_unwrap_001",
+    "category": "wrapped_dek",
+    "protocol_version": "1.0",
+    "description": "X25519-ECIES + HKDF-SHA-256 + AES-KW-256 unwrap (CONTRACT_SPEC.md §6.3): a fixed 76-byte reference wrap envelope unwraps to the 32-byte DEK under the recipient's X25519 private key. The conformance direction is UNWRAP — forward wrapping is non-deterministic (a fresh ephemeral key per §6.3 step 1), so every conformant implementation MUST unwrap this reference envelope to the same DEK.",
+    "input": {
+      "operation": "unwrap_dek",
+      "recipient_private_key_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      "recipient_public_key_hex": "07a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c",
+      "wrapped_dek_envelope_hex": "cede0101ef4fd949a162d565d2b2e7a758785ea954d3631b8df197f17aaa8b6b4d6655140a37082c25cf3d575b6c21a031135304530c5de38300266c0dcb9772768e53611917d2b70eddc4ce"
+    },
+    "expected_output": {
+      "dek_hex": "4242424242424242424242424242424242424242424242424242424242424242",
+      "wrap_envelope_byte_count": 76
+    },
+    "notes": "Bootstrap artifact: the wrap envelope was produced once by the reference Go implementation (internal/envelope/WrapDEK) with a random ephemeral per CS §6.3 step 1 and pinned here per CS §17.4. The envelope is self-contained — bytes 4..35 are the ephemeral public key — so UnwrapDEK is fully deterministic on (envelope, recipient_private_key). Envelope layout: magic CEDE + version 01 + wrap_alg 01 + ephemeral_pub[32] + wrapped_dek[40]."
+  },
+  {
+    "test_id": "wrapped_dek_upload_shape_001",
+    "category": "wrapped_dek",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §8.2 POST /v1/tenants/{tenant_id}/wrapped-deks request + 200 response shape. wrapped_by_member_id MUST equal the authenticated session-actor's member_id (Q-G6-33 handler-level identity binding). SHAPE vector (no crypto oracle) — independently cross-verified at Groups 12/13 per §17.4.",
+    "input": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/tenants/018f0c00-0000-7000-8000-000000000001/wrapped-deks",
+        "headers": {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer <opaque-session-token>"
+        },
+        "body": {
+          "for_member_id": "018f0c00-0000-7000-8000-000000000020",
+          "dek_version": 1,
+          "wrapped_dek_envelope": "<base64url-encoded 76-byte wrap envelope per CS §6.3>",
+          "wrapped_by_member_id": "<MUST equal session-actor member_id per Q-G6-33>"
+        }
+      }
+    },
+    "expected_output": {
+      "response": {
+        "status": 200,
+        "body": {
+          "wrapped_dek_id": "018f0c00-0000-7000-8000-000000000010",
+          "for_member_id": "018f0c00-0000-7000-8000-000000000020",
+          "dek_version": 1,
+          "created_at": "2026-05-25T13:00:00Z"
+        }
+      }
+    },
+    "notes": "audit_entry_id is NOT in the response body per Q-G6-10 wire-faithfulness."
+  },
+  {
+    "test_id": "wrapped_dek_fetch_current_shape_001",
+    "category": "wrapped_dek",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §8.3 GET /v1/members/{member_id}/wrapped-deks happy path: a member with one active wrapped DEK at the current tenant DEK version. SHAPE vector.",
+    "input": {
+      "request": {
+        "method": "GET",
+        "path": "/v1/members/018f0c00-0000-7000-8000-000000000001/wrapped-deks",
+        "headers": { "Authorization": "Bearer <opaque-session-token>" }
+      }
+    },
+    "expected_output": {
+      "response": {
+        "status": 200,
+        "body": {
+          "wrapped_deks": [
+            {
+              "wrapped_dek_id": "018f0c00-0000-7000-8000-000000000010",
+              "dek_version": 1,
+              "wrapped_dek_envelope": "<base64url-encoded 76-byte wrap envelope per CS §6.3>",
+              "created_at": "2026-05-25T13:00:00Z"
+            }
+          ]
+        }
+      }
+    },
+    "notes": "CS §8.3 lines 651-672."
+  },
+  {
+    "test_id": "wrapped_dek_fetch_empty_shape_001",
+    "category": "wrapped_dek",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §8.3: a member that exists but has no active wrapped DEK returns 200 with an empty array (awaiting wrapping by an existing member). SHAPE vector.",
+    "input": {
+      "request": {
+        "method": "GET",
+        "path": "/v1/members/018f0c00-0000-7000-8000-000000000001/wrapped-deks",
+        "headers": { "Authorization": "Bearer <opaque-session-token>" }
+      }
+    },
+    "expected_output": {
+      "response": {
+        "status": 200,
+        "body": { "wrapped_deks": [] }
+      }
+    },
+    "notes": "CS §8.3:672 empty-array semantics."
+  },
+  {
+    "test_id": "wrapped_dek_revoke_shape_001",
+    "category": "wrapped_dek",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §8.4 POST /v1/wrapped-deks/{wrapped_dek_id}/revoke request + 200 response shape. reason MUST be one of the three enumerated values. SHAPE vector.",
+    "input": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/wrapped-deks/018f0c00-0000-7000-8000-000000000010/revoke",
+        "headers": {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer <opaque-session-token>"
+        },
+        "body": { "reason": "member-deactivated" },
+        "reason_enum": ["member-deactivated", "dek-rotated", "compromised"]
+      }
+    },
+    "expected_output": {
+      "response": {
+        "status": 200,
+        "body": {
+          "wrapped_dek_id": "018f0c00-0000-7000-8000-000000000010",
+          "revoked_at": "2026-05-25T14:00:00Z"
+        }
+      }
+    },
+    "notes": "A revoked wrapped DEK is retained for audit (UPDATE revoked_at, no DELETE) per CS §8.4."
+  },
+  {
+    "test_id": "member_public_key_upload_shape_001",
+    "category": "wrapped_dek",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §8.1 POST /v1/members/{member_id}/public-key request + 200 response shape. Carries the 32-byte X25519 public key + SHA-256 of the auth_verification_token (§5.4) + the public-key fingerprint. SHAPE vector.",
+    "input": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/members/018f0c00-0000-7000-8000-000000000020/public-key",
+        "headers": {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer <opaque-session-token>"
+        },
+        "body": {
+          "public_key_x25519": "<base64url-encoded 32 bytes per CS §4.2>",
+          "auth_verification_token_sha256": "<base64url-encoded 32 bytes per CS §5.4>",
+          "public_key_algorithm": "X25519",
+          "public_key_fingerprint": "<base64url-encoded SHA-256 of public key>"
+        }
+      }
+    },
+    "expected_output": {
+      "response": {
+        "status": 200,
+        "body": {
+          "member_id": "018f0c00-0000-7000-8000-000000000020",
+          "public_key_version": 1,
+          "registered_at": "2026-05-25T13:00:00Z"
+        }
+      }
+    },
+    "notes": "public_key_version increments on each call (first registration -> 1; §5.6 password-change re-upload -> 2, 3, ...)."
+  }
+]

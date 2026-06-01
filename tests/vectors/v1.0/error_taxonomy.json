@@ -1,0 +1,178 @@
+[
+  {
+    "test_id": "error_validation_batch_too_large_001",
+    "category": "error_taxonomy",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §7.5 + §14.3: an ingest body exceeding the 16 MiB envelope maximum returns 400 ValidationError 'batch_too_large'.",
+    "input": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/ingest",
+        "headers": { "Content-Type": "application/octet-stream", "X-Cephios-API-Version": "1.0", "X-Cephios-Session-Id": "018f0c00-0000-7000-8000-000000000001", "X-Cephios-Batch-Sequence": "0" },
+        "body_size_bytes": 16777217,
+        "body_note": "16 * 1024 * 1024 + 1 bytes; constructed programmatically by the runner"
+      }
+    },
+    "expected_output": {
+      "error": { "category": "ValidationError", "code": "batch_too_large", "http_status": 400 }
+    },
+    "notes": "CS §7.5:489 maximum; §14.2 ValidationError -> HTTP 400."
+  },
+  {
+    "test_id": "error_validation_session_not_open_001",
+    "category": "error_taxonomy",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §14.3: POST against a session whose end_state != 'open' (closed, or cross-tenant/RLS-hidden) returns 400 ValidationError 'session_not_open'. The conflation prevents cross-tenant existence-probing.",
+    "input": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/ingest",
+        "headers": { "Content-Type": "application/octet-stream", "X-Cephios-API-Version": "1.0", "X-Cephios-Session-Id": "018f0c00-0000-7000-8000-000000000099", "X-Cephios-Batch-Sequence": "0" },
+        "body_hex": "ce0f010104050607080910111213141516010203040506070809101112131415ff",
+        "preconditions": ["session 018f0c00-0000-7000-8000-000000000099 is closed or not visible under the authenticated tenant"]
+      }
+    },
+    "expected_output": {
+      "error": { "category": "ValidationError", "code": "session_not_open", "http_status": 400 }
+    },
+    "notes": "CS §11.1 (publish) reuses the same disposition; §14.2 ValidationError -> HTTP 400."
+  },
+  {
+    "test_id": "error_envelope_malformed_001",
+    "category": "error_taxonomy",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §6.1 + §14.3: an ingest body whose magic bytes are not 0xCE 0x0F returns 400 EnvelopeError 'malformed' at the byte-level header check.",
+    "input": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/ingest",
+        "headers": { "Content-Type": "application/octet-stream", "X-Cephios-API-Version": "1.0", "X-Cephios-Session-Id": "018f0c00-0000-7000-8000-000000000001", "X-Cephios-Batch-Sequence": "0" },
+        "body_hex": "dead010104050607080910111213141516010203040506070809101112131415ff"
+      }
+    },
+    "expected_output": {
+      "error": { "category": "EnvelopeError", "code": "malformed", "http_status": 400 }
+    },
+    "notes": "CS §6.1:329 magic; §14.2 EnvelopeError -> HTTP 400."
+  },
+  {
+    "test_id": "error_version_envelope_algorithm_unsupported_001",
+    "category": "error_taxonomy",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §6.1 + §14.3: an ingest body with alg_id != 0x01 returns 426 VersionError 'envelope_algorithm_unsupported'.",
+    "input": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/ingest",
+        "headers": { "Content-Type": "application/octet-stream", "X-Cephios-API-Version": "1.0", "X-Cephios-Session-Id": "018f0c00-0000-7000-8000-000000000001", "X-Cephios-Batch-Sequence": "0" },
+        "body_hex": "ce0f010204050607080910111213141516010203040506070809101112131415ff"
+      }
+    },
+    "expected_output": {
+      "error": { "category": "VersionError", "code": "envelope_algorithm_unsupported", "http_status": 426 }
+    },
+    "notes": "alg_id 0x02 reserved-not-active per CS §6.2; §14.2 VersionError -> HTTP 426."
+  },
+  {
+    "test_id": "error_version_envelope_version_unsupported_001",
+    "category": "error_taxonomy",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §6.1 + §14.3: an ingest body with version byte != 0x01 returns 426 VersionError 'envelope_version_unsupported'.",
+    "input": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/ingest",
+        "headers": { "Content-Type": "application/octet-stream", "X-Cephios-API-Version": "1.0", "X-Cephios-Session-Id": "018f0c00-0000-7000-8000-000000000001", "X-Cephios-Batch-Sequence": "0" },
+        "body_hex": "ce0f020104050607080910111213141516010203040506070809101112131415ff"
+      }
+    },
+    "expected_output": {
+      "error": { "category": "VersionError", "code": "envelope_version_unsupported", "http_status": 426 }
+    },
+    "notes": "version 0x02 unsupported per CS §6.1:330; §14.2 VersionError -> HTTP 426."
+  },
+  {
+    "test_id": "error_version_api_version_unsupported_001",
+    "category": "error_taxonomy",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §7.2 + §15.3 + §14.3: an X-Cephios-API-Version header with a major mismatch against the cloud's supported version returns 426 VersionError 'api_version_unsupported'.",
+    "input": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/ingest",
+        "headers": { "Content-Type": "application/octet-stream", "X-Cephios-API-Version": "2.0", "X-Cephios-Session-Id": "018f0c00-0000-7000-8000-000000000001", "X-Cephios-Batch-Sequence": "0" },
+        "body_hex": "ce0f010104050607080910111213141516010203040506070809101112131415ff"
+      }
+    },
+    "expected_output": {
+      "error": { "category": "VersionError", "code": "api_version_unsupported", "http_status": 426 }
+    },
+    "notes": "Supported version exposed via X-Cephios-Supported-Versions response header per CS §15.3."
+  },
+  {
+    "test_id": "error_buffer_ingest_rate_exceeded_001",
+    "category": "error_taxonomy",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §7.6 + §14.2: an over-budget ingest returns 429 BufferError 'ingest_rate_exceeded' with a Retry-After header.",
+    "input": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/ingest",
+        "headers": { "Content-Type": "application/octet-stream", "X-Cephios-API-Version": "1.0", "X-Cephios-Session-Id": "018f0c00-0000-7000-8000-000000000001", "X-Cephios-Batch-Sequence": "101" },
+        "preconditions": ["the per-session token bucket is depleted (100 req/sec baseline)"]
+      }
+    },
+    "expected_output": {
+      "error": { "category": "BufferError", "code": "ingest_rate_exceeded", "http_status": 429 },
+      "response_headers": { "Retry-After": "1" }
+    },
+    "notes": "BufferError per CS §14.2 is the server-side HTTP 429 wire signal, distinct from the SDK-internal §7.7 BufferError/BufferEvent surface."
+  },
+  {
+    "test_id": "error_consent_not_active_001",
+    "category": "error_taxonomy",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §9.1 + §14.3: opening a session against a consent record that is missing, revoked, or subject-mismatched returns 403 ConsentError 'consent_not_active' (the three conditions unify to one wire shape to prevent existence-probing).",
+    "input": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/sessions",
+        "headers": { "Content-Type": "application/json", "Authorization": "Bearer <opaque-session-token>" },
+        "body": {
+          "session_id": "018f0c00-0000-7000-8000-000000000005",
+          "workspace_id": "018f0c00-0000-7000-8000-000000000002",
+          "subject_id": "018f0c00-0000-7000-8000-000000000003",
+          "consent_record_id": "018f0c00-0000-7000-8000-0000000000ff",
+          "modality": "EEG"
+        }
+      }
+    },
+    "expected_output": {
+      "error": { "category": "ConsentError", "code": "consent_not_active", "http_status": 403 }
+    },
+    "notes": "CS §9.1:775; §14.2 ConsentError -> HTTP 403."
+  },
+  {
+    "test_id": "error_authorization_not_yet_operational_001",
+    "category": "error_taxonomy",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §14.3 + §12.2/§12.3: every POST /v1/grants call returns 403 AuthorizationError 'not_yet_operational' in MVP (the authorization gate ships empty; the response is returned before any DB touch).",
+    "input": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/grants",
+        "headers": { "Content-Type": "application/json", "Authorization": "Bearer <opaque-session-token>" },
+        "body": {
+          "grant_id": "018f0c00-0000-7000-8000-000000000001",
+          "operation": "share-with-subject",
+          "scope": { "subject_id": "018f0c00-0000-7000-8000-000000000002", "session_ids": [] },
+          "expires_at": "2027-01-01T00:00:00Z"
+        }
+      }
+    },
+    "expected_output": {
+      "error": { "category": "AuthorizationError", "code": "not_yet_operational", "http_status": 403 }
+    },
+    "notes": "The gate-stub shape per CS §14.3; §14.2 AuthorizationError -> HTTP 403. Both share-with-subject (§12.2) and cross-workspace-read (§12.3) operations return this in MVP."
+  }
+]

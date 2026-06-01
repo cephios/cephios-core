@@ -1,0 +1,71 @@
+[
+  {
+    "test_id": "session_open_001",
+    "category": "session_lifecycle",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §9.1 POST /v1/sessions request + 200 response shape. The client-generated session_id supports idempotent open; the response echoes it with state 'open' and the audit_entry_id of the open-event proof row. SHAPE vector.",
+    "input": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/sessions",
+        "headers": { "Content-Type": "application/json", "Authorization": "Bearer <opaque-session-token>" },
+        "body": {
+          "session_id": "018f0c00-0000-7000-8000-000000000001",
+          "workspace_id": "018f0c00-0000-7000-8000-000000000002",
+          "subject_id": "018f0c00-0000-7000-8000-000000000003",
+          "consent_record_id": "018f0c00-0000-7000-8000-000000000004",
+          "modality": "EEG",
+          "schema_declaration": {
+            "channel_count": 1,
+            "sample_rate_hz": 250,
+            "bits_per_sample": 16,
+            "byte_order": "little-endian",
+            "channel_names": ["Fp1"],
+            "units": "uV"
+          },
+          "dek_version": 0
+        }
+      }
+    },
+    "expected_output": {
+      "response": {
+        "status": 200,
+        "body": {
+          "session_id": "018f0c00-0000-7000-8000-000000000001",
+          "state": "open",
+          "opened_at": "2026-05-25T13:00:00Z",
+          "audit_entry_id": "018f0c00-0000-7000-8000-0000000000aa"
+        }
+      }
+    },
+    "notes": "schema_declaration trimmed to a 1-channel example; CS §9.1 permits the full 64-channel montage. consent_record_id is structurally required (SC)."
+  },
+  {
+    "test_id": "session_close_001",
+    "category": "session_lifecycle",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §9.2 POST /v1/sessions/{session_id}/close request + 200 response shape. end_state MUST be 'closed' for client-initiated close; the cloud sets 'timeout-closed' only via the inactivity sweep. SHAPE vector.",
+    "input": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/sessions/018f0c00-0000-7000-8000-000000000001/close",
+        "headers": { "Content-Type": "application/json", "Authorization": "Bearer <opaque-session-token>" },
+        "body": { "end_state": "closed" }
+      }
+    },
+    "expected_output": {
+      "response": {
+        "status": 200,
+        "body": {
+          "session_id": "018f0c00-0000-7000-8000-000000000001",
+          "state": "closed",
+          "closed_at": "2026-05-25T13:30:00Z",
+          "total_batches": 0,
+          "total_envelope_bytes": 0,
+          "audit_entry_id": "018f0c00-0000-7000-8000-0000000000bb"
+        }
+      }
+    },
+    "notes": "total_batches / total_envelope_bytes are aggregated from sample_batches at close time."
+  }
+]
