@@ -1,0 +1,6 @@
+# Hash-pinned conformance vectors (see tests/vectors/UPSTREAM.json): the SHA-256 pin enforced by
+# tests/test_vector_pin.py requires a byte-identical checkout on every OS. Mark the vector tree as
+# binary (-text) so git performs NO end-of-line conversion at checkout/check-in — in particular,
+# git-for-Windows autocrlf never rewrites LF->CRLF. -text is the unambiguous "never touch these
+# bytes" intent for SHA-pinned data; this is scoped to the vector tree only (no *.py / pyproject).
+tests/vectors/** -text
