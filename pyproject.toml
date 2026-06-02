@@ -27,6 +27,14 @@ dependencies = [
     "cryptography>=42",
     "httpx>=0.27",
     "argon2-cffi>=23.1",
+    # apsw is the §7.7.1 SDK durable-buffer storage engine (WAL + synchronous=FULL).
+    # Lower-bound pin only, NO upper cap: apsw uses SQLite-style versioning, NOT semver.
+    # Its version is <bundled-SQLite-version>.<apsw-packaging-revision> (e.g. 3.47.0.0 =
+    # SQLite 3.47.0, apsw rev 0). The leading "3" is SQLite's major, not a semver
+    # breaking-change boundary, so a `>=X,<4` cap would be wrong. The 3.47 floor selects a
+    # SQLite (Oct 2024) whose WAL + synchronous + PRAGMA features (all present since SQLite
+    # 3.7) we rely on, and which ships cp310-cp313 manylinux/macos/win wheels (the CI matrix).
+    "apsw>=3.47",
 ]
 
 [project.optional-dependencies]
