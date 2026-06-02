@@ -80,6 +80,21 @@ python_version = "3.10"
 strict = true
 packages = ["cephios_core"]
 
+# apsw (3.53.x) ships a PEP 646 stub: apsw/__init__.pyi:138 uses `*tuple[...]` unpacking in a
+# subscript, valid only on Python >=3.11. Under the 3.10-target check the 3.10-interpreter CI
+# cells reject it at parse time (Invalid syntax), failing the gate on a third-party stub — not
+# our code. Keep apsw opaque to mypy (skip following its stub); cephios_core stays strict.
+[[tool.mypy.overrides]]
+# Both the top-level `apsw` module (where the offending __init__.pyi:138 lives, reached via
+# `import apsw`) and any submodules: the `apsw.*` wildcard alone does NOT cover `apsw` itself.
+module = ["apsw", "apsw.*"]
+follow_imports = "skip"
+# apsw ships a .pyi stub; `follow_imports = skip` does NOT apply to stub files unless
+# follow_imports_for_stubs is also set (it defaults to false), so this key is what actually
+# stops mypy parsing apsw/__init__.pyi:138.
+follow_imports_for_stubs = true
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
