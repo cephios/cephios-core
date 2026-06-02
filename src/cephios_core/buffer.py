@@ -47,17 +47,22 @@ is rolled back on reopen — proven by the process-kill test).
 from __future__ import annotations
 
 import enum
+import logging
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, cast
+from typing import ClassVar, Final, cast
 from uuid import UUID
 
 import apsw
 
 from cephios_core.errors import CephiosError
+
+# Module logger for the reopen-retry observability hook (§B Windows-CI verification): each caught
+# transient reopen IOError logs the SQLITE extended result code at WARNING. stdlib only — no dep.
+_log = logging.getLogger(__name__)
 
 __all__ = [
     "Mode",
@@ -349,6 +354,13 @@ class Buffer:
     until :meth:`clear_terminal_latch`.
     """
 
+    # Reopen retry backoff schedule (seconds) — the sleeps BETWEEN attempts. 4 sleeps => 5
+    # attempts, total wait <= 0.75s. Rides out a TRANSIENT reopen IOError: a process killed
+    # inside the BEGIN IMMEDIATE..COMMIT window dies holding the WAL write lock, and Windows
+    # releases the dead writer's -wal/-shm locks ASYNCHRONOUSLY after the process object is
+    # signaled, so a fast reopen can hit the SQLITE_IOERR SHM-lock family on the WAL attach.
+    _REOPEN_BACKOFFS_S: ClassVar[tuple[float, ...]] = (0.05, 0.10, 0.20, 0.40)
+
     def __init__(self, config: BufferConfig) -> None:
         config._validate()
         self._config = config
@@ -367,12 +379,66 @@ class Buffer:
         # lock the in-flight callback still holds.
         self._callback_owner: int | None = None
 
-        self._conn = apsw.Connection(str(config.storage_path))
-        self._apply_pragmas()
+        self._open_with_retry(str(config.storage_path))
         self._conn.execute(_SCHEMA)
         self._terminal: _Terminal | None = self._read_terminal()
 
     # -- connection setup ---------------------------------------------------
+
+    def _open_with_retry(self, path: str) -> None:
+        """Open the connection + apply the WAL/synchronous PRAGMAs, riding out a TRANSIENT
+        reopen ``apsw.IOError`` (§7.7.1 robustness).
+
+        Why this exists: a process killed/crashed inside the :meth:`_persist`
+        ``BEGIN IMMEDIATE``..``COMMIT`` window dies holding the WAL write lock. On Windows the
+        dead writer's ``-wal``/``-shm`` byte-range locks are released ASYNCHRONOUSLY after the
+        process object is signaled, so a fast reopen-after-kill can hit the ``SQLITE_IOERR``
+        SHM-lock family on ``PRAGMA journal_mode=WAL`` (the WAL attach), even though the durable
+        bytes are intact (acked frames fsync'd, the uncommitted transaction rolled back). A
+        reopen that throws instead of recovering makes the durable data momentarily UNREACHABLE
+        on restart, against the spirit of §7.7.1. POSIX releases the locks synchronously on
+        process death, so this is observed only on the Windows §B cells.
+
+        Bounded: ``len(_REOPEN_BACKOFFS_S) + 1`` attempts, total wait <= ~0.75s. Catches
+        ``apsw.IOError`` ONLY — a corrupt-db / auth / any other apsw error surfaces immediately.
+        After the final attempt the last ``apsw.IOError`` is RE-RAISED unchanged, so a PERSISTENT
+        disk failure (the SAME ``SQLITE_IOERR``) still surfaces, just delayed by the cap; a bad
+        disk is never retried into silence. ``busy_timeout`` cannot help here — it only retries
+        ``SQLITE_BUSY``/``LOCKED``, not ``SQLITE_IOERR`` — so this explicit retry is required.
+
+        Scoped to the open + PRAGMA attach ONLY. The steady-state path (:meth:`write` /
+        :meth:`_persist`) is deliberately NOT wrapped: a normal-operation IOError must surface.
+        """
+        backoffs = self._REOPEN_BACKOFFS_S
+        for attempt in range(len(backoffs) + 1):
+            conn = None
+            try:
+                conn = apsw.Connection(path)
+                self._conn = conn
+                self._apply_pragmas()
+                return
+            except apsw.IOError as exc:
+                # Close any half-opened handle so a partial connection does not accumulate; a
+                # fresh apsw.Connection is created on the next attempt.
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except apsw.Error:
+                        pass
+                if attempt == len(backoffs):
+                    raise  # cap reached: re-raise the persistent IOError unchanged (real bad disk)
+                # Observability hook for the §B Windows-CI logs: the SQLITE extended result code
+                # (e.g. the SHM-lock subcode) on each transient retry. `extendedresult` is the
+                # apsw 3.53 attribute; a synthetically-raised IOError lacks it -> None.
+                _log.warning(
+                    "cephios buffer reopen IOError (attempt %d/%d), retrying in %.0fms; "
+                    "SQLITE extended result=%s",
+                    attempt + 1,
+                    len(backoffs) + 1,
+                    backoffs[attempt] * 1000,
+                    getattr(exc, "extendedresult", None),
+                )
+                time.sleep(backoffs[attempt])
 
     def _apply_pragmas(self) -> None:
         """Pin the §7.7.1 durability PRAGMAs on the production connection.

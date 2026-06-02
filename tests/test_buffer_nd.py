@@ -37,6 +37,7 @@ import time
 import uuid
 from pathlib import Path
 
+import apsw
 import pytest
 
 from cephios_core.buffer import Buffer, BufferConfig, Mode, TerminalLatchError
@@ -147,6 +148,12 @@ def test_process_kill_ack_before_commit_is_lossy(tmp_path):
     # RED-CAPABILITY LOCK: under the ack-before-commit mutation, the acked record does NOT
     # survive the kill — proving the durability proof above can go red. If this ever shows
     # the record surviving, the persist-before-ack ordering has stopped being load-bearing.
+    #
+    # This child dies holding the WAL write lock (open BEGIN IMMEDIATE, never committed). On
+    # Windows that triggered a transient SQLITE_IOERR on the parent's reopen (the dead writer's
+    # -wal/-shm locks are released asynchronously); Buffer.__init__ now rides that out via the
+    # bounded reopen retry (see Buffer._open_with_retry). The assertion below is UNCHANGED — the
+    # reopen merely no longer throws, so the test is cross-platform with no Windows carve-out.
     db = tmp_path / "buffer.db"
     sid = uuid.uuid4()
     _spawn_and_kill(tmp_path, "write_ack_before_commit", db, 1, sid)
@@ -193,3 +200,72 @@ def test_process_kill_terminal_latch_survives(tmp_path):
         assert reopened.depth() == 1
     finally:
         reopened.close()
+
+
+# ---------------------------------------------------------------------------
+# Reopen-robustness: the bounded retry rides out a TRANSIENT reopen IOError, but a PERSISTENT
+# one (bad disk) still surfaces after the cap. The actual Windows lock-rundown timing is NOT
+# locally reproducible (POSIX releases the dead writer's locks synchronously, so the real kill
+# tests above reopen on attempt 1 here) — these inject a deterministic, cross-OS fake IOError
+# at the PRAGMA-attach point (_apply_pragmas) to isolate the retry behavior. The §B Windows
+# cells + the _open_with_retry WARNING (extendedresult) are the real-mechanism confirmation.
+# ---------------------------------------------------------------------------
+
+
+def _buffer_at(tmp_path) -> Buffer:
+    return Buffer(
+        BufferConfig(
+            storage_path=tmp_path / "buffer.db",
+            capacity_records=8,
+            low_water_records=4,
+            mode=Mode.BLOCK_AND_SIGNAL,
+            event_callback=lambda _ev: None,
+        )
+    )
+
+
+def test_reopen_retries_transient_ioerror(tmp_path, monkeypatch):
+    # RED 1: a transient reopen IOError that clears within the cap is ridden out by the bounded
+    # retry. RED-CAPABLE: with the retry disabled (Buffer._REOPEN_BACKOFFS_S = ()) the same
+    # transient propagates (verbatim capture in the commit body). Shrink the backoffs to 0 so
+    # the test does not actually sleep.
+    monkeypatch.setattr(Buffer, "_REOPEN_BACKOFFS_S", (0.0, 0.0, 0.0, 0.0))
+    real_apply = Buffer._apply_pragmas
+    calls = {"n": 0}
+
+    def flaky(self) -> None:
+        calls["n"] += 1
+        if calls["n"] <= 2:  # first 2 attempts fail transiently; the 3rd succeeds
+            raise apsw.IOError("disk I/O error (synthetic transient)")
+        real_apply(self)
+
+    monkeypatch.setattr(Buffer, "_apply_pragmas", flaky)
+
+    buf = _buffer_at(tmp_path)  # must NOT raise: the retry rides out the 2 transient failures
+    try:
+        assert calls["n"] == 3  # 2 failed attempts + 1 success
+        assert buf._read_pragma("synchronous") == 2  # the real PRAGMAs took on the good attempt
+        sid = uuid.uuid4()
+        buf.write(sid, 0, b"\xce\x0f\x01\x01payload")
+        assert buf.depth() == 1  # fully functional after the ridden-out transient
+    finally:
+        buf.close()
+
+
+def test_reopen_persistent_ioerror_raises_after_cap(tmp_path, monkeypatch):
+    # RED 2: a PERSISTENT reopen IOError (bad disk) must STILL raise after the bounded cap — the
+    # retry must not swallow it or hang. RED-CAPABLE: if the final attempt returned instead of
+    # re-raising (swallow), this pytest.raises would fail "DID NOT RAISE" (verbatim capture in
+    # the commit body). Bounded => exactly len(backoffs)+1 attempts, then re-raise.
+    monkeypatch.setattr(Buffer, "_REOPEN_BACKOFFS_S", (0.0, 0.0))  # 3 attempts, ~0s
+    calls = {"n": 0}
+
+    def always_io(self) -> None:
+        calls["n"] += 1
+        raise apsw.IOError("disk I/O error (synthetic persistent)")
+
+    monkeypatch.setattr(Buffer, "_apply_pragmas", always_io)
+
+    with pytest.raises(apsw.IOError):
+        _buffer_at(tmp_path)
+    assert calls["n"] == 3  # bounded: len((0,0)) + 1 attempts, then the IOError surfaced (no hang)
