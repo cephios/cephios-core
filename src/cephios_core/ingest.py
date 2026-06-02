@@ -40,7 +40,6 @@ Standing invariants (CLAUDE.md §9):
 from __future__ import annotations
 
 import asyncio
-import json
 import threading
 from collections.abc import Coroutine
 from dataclasses import dataclass
@@ -51,7 +50,7 @@ from uuid import UUID
 
 import httpx
 
-from cephios_core.errors import ERROR_CATEGORIES, CephiosError
+from cephios_core.errors import CephiosError, decode_error
 
 __all__ = [
     "DEFAULT_BASE_URL",
@@ -179,41 +178,11 @@ class IngestOutcome:
     retry_after: float | None = None
 
 
-# ---------------------------------------------------------------------------
-# §14.1 minimal error decode — ONLY enough (category, code) for rejected_reason().
-# ---------------------------------------------------------------------------
-
-
-def decode_error(body: bytes) -> CephiosError | None:
-    """Minimally decode a §14.1 error envelope into a :class:`CephiosError`, or ``None``.
-
-    Reads ``{"error": {"category", "code", "message"?}}`` (§14.1), maps ``category`` to its
-    class via :data:`~cephios_core.errors.ERROR_CATEGORIES`, and constructs ``cls(code,
-    message)``. The result feeds :func:`~cephios_core.buffer.rejected_reason`, which needs only
-    the ``(category, code)`` pair.
-
-    Returns ``None`` on ANY decode failure (not JSON, missing ``error``/``category``/``code``,
-    unknown category, empty body) — :func:`rejected_reason` maps ``None`` →
-    ``rejected_other`` per the §7.7.3 "parse failure or empty body" row, so a malformed error
-    body degrades safely rather than raising.
-
-    BOUNDARY (C5a vs C5b): this is the MINIMAL decode the uploader needs. It does NOT validate
-    ``http_status`` against the category, decode ``details`` / ``request_id``, or enforce the
-    full §14.2 twelve-category / §14.3 code taxonomy — that full decoder and its
-    ``error_taxonomy`` conformance vectors are C5b.
-    """
-    try:
-        doc = json.loads(body)
-        err = doc["error"]
-        category = err["category"]
-        code = err["code"]
-    except (ValueError, KeyError, TypeError):
-        return None
-    cls = ERROR_CATEGORIES.get(category)
-    if cls is None:
-        return None
-    message = err.get("message", "") if isinstance(err, dict) else ""
-    return cls(code, message)
+# §14.1 error decode lives in cephios_core.errors (the §14 module) as of Commit 5b: the full
+# twelve-category decoder replaced Commit 5a's minimal (category, code)-only decode that was
+# defined here. ``decode_error`` is re-exported (imported above) so the uploader's REJECTED
+# classification below and any existing ``from cephios_core.ingest import decode_error`` import
+# keep working unchanged; its (category, code) result still feeds rejected_reason().
 
 
 def parse_retry_after(value: str | None) -> float | None:
