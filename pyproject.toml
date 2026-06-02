@@ -38,9 +38,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Conformance-runner extra — an empty placeholder here; populated in Group 12 Commit 6
-# (the `cephios-core[conformance]` runner). Declared now so the extra name is stable.
+# Conformance-runner extra (Group 12 Commit 6). Intentionally EMPTY: the §17.3 runner
+# (cephios_core.conformance) drives only the in-package crypto + the httpx-based clients, and
+# httpx is already a core dependency — so the runner needs ZERO additional dependencies. The
+# extra name is kept stable (declared in C2) for forward compatibility; install plain
+# `cephios-core` and run `cephios-conformance` (or `python -m cephios_core.conformance`).
 conformance = []
+
+# The §17.3 conformance runner CLI (Group 12 Commit 6). OS-agnostic console entry point; CI
+# invokes `python -m cephios_core.conformance` (equivalent) so it does not depend on the script
+# being on PATH across the {ubuntu,macos,windows} matrix.
+[project.scripts]
+cephios-conformance = "cephios_core.conformance:main"
 
 [project.urls]
 Homepage = "https://github.com/cephios/cephios-core"
