@@ -352,11 +352,13 @@ class Uploader:
         self._buffer.acknowledge(session_id, batch_sequence)
 
     def _wait_seconds(self, outcome: IngestOutcome, attempt: int) -> float:
-        """Seconds to wait before the next retry. On a 429 honor ``Retry-After`` (§7.6) AND
-        apply exponential backoff: ``max(retry_after, backoff(attempt))`` waits at least the
-        server's requested delay while still growing on repeated 429s. On a 5xx/network
-        RETRYABLE it is the exponential backoff alone (§7.3)."""
+        """Seconds to wait before the next retry, bounded by the backoff ceiling. On a 429
+        honor ``Retry-After`` (§7.6) AND apply exponential backoff, then clamp the effective
+        wait to ``BackoffPolicy.maximum_seconds`` so an absurd ``Retry-After`` cannot stall the
+        drain unboundedly (§7.6 / §7.7.4): ``min(max(retry_after, backoff(attempt)), ceiling)``
+        — a small valid ``Retry-After`` is still honored as-is. On a 5xx/network RETRYABLE it
+        is the exponential backoff alone (§7.3)."""
         backoff = self._backoff.delay(attempt)
         if outcome.disposition is Disposition.BACKPRESSURE and outcome.retry_after is not None:
-            return max(outcome.retry_after, backoff)
+            return min(max(outcome.retry_after, backoff), self._backoff.maximum_seconds)
         return backoff

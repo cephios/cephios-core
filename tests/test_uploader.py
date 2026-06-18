@@ -178,6 +178,50 @@ def test_retry_after_combines_with_backoff_floor(tmp_path):
         buffer.close()
 
 
+def test_429_absurd_retry_after_is_clamped_to_backoff_ceiling(tmp_path):
+    # Security #2 (CONTRACT_SPEC §7.6/§7.7.4): a hostile/misconfigured 429 carrying an absurd
+    # Retry-After must NOT stall the drain unboundedly. The honored wait is clamped to the
+    # backoff ceiling; the retain/retry semantics are unchanged (the record is NOT purged).
+    events: list[BufferEvent] = []
+    buffer = _buffer(tmp_path, events)
+    try:
+        _seed_one(buffer)
+        client = _FakeClient([_backpressure(999_999_999.0)])  # ~31-year Retry-After, "429 forever"
+        sleeps = _Sleeps()
+        backoff = BackoffPolicy(base_seconds=0.5, factor=2.0, maximum_seconds=30.0)
+        uploader = Uploader(
+            buffer=buffer, client=client, sleep=sleeps, backoff=backoff, max_attempts=2
+        )
+        uploader.drain()
+        # The single inter-attempt wait is clamped to the ceiling, NOT ~1e9.
+        assert sleeps.calls == [backoff.maximum_seconds]  # 30.0, not 999_999_999
+        assert all(w <= backoff.maximum_seconds for w in sleeps.calls)
+        # Retain semantics untouched: the record survives the 429 (not purged, not rejected).
+        assert buffer.depth() == 1
+        assert not any(isinstance(e, (BufferRejected, BufferLost)) for e in events)
+    finally:
+        buffer.close()
+
+
+def test_429_small_retry_after_below_ceiling_is_honored_as_is(tmp_path):
+    # The clamp is min(max(retry_after, backoff), ceiling), NOT a flat ceiling: a small valid
+    # Retry-After below the ceiling is honored exactly, proving legitimate small waits survive.
+    events: list[BufferEvent] = []
+    buffer = _buffer(tmp_path, events)
+    try:
+        _seed_one(buffer)
+        client = _FakeClient([_backpressure(5.0)])  # 5s, well below the 30s ceiling
+        sleeps = _Sleeps()
+        backoff = BackoffPolicy(base_seconds=0.5, factor=2.0, maximum_seconds=30.0)
+        uploader = Uploader(
+            buffer=buffer, client=client, sleep=sleeps, backoff=backoff, max_attempts=2
+        )
+        uploader.drain()
+        assert sleeps.calls == [5.0]  # max(retry_after=5, backoff(0)=0.5)=5, < ceiling 30 → honored
+    finally:
+        buffer.close()
+
+
 # ---------------------------------------------------------------------------
 # 5xx → RETAIN + retry with backoff.
 # ---------------------------------------------------------------------------
