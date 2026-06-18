@@ -1,6 +1,6 @@
 {
-  "commit": "9c195db40307c6dce962279e1974b87702b54f25",
-  "note": "Vendored copy of the published Cephios Protocol v1.0 conformance suite, pinned by SHA-256. test_vector_pin.py fails loudly on any drift. A git-submodule pin of cephios/protocol-tests is proposed for C7 (when ci.yml is opened). file_roundtrip.json added in INGEST-3a (the §17 client-side chunk->reassemble category); the `commit` field above still pins the prior protocol-tests SHA and is a Founder-operational update to the new protocol-tests INGEST-3a commit SHA once that repo's commit lands.",
+  "commit": "fffa864947f9690180c74c66d3050f35ca4c5d6f",
+  "note": "Vendored copy of the published Cephios Protocol v1.0 conformance suite, pinned by SHA-256. test_vector_pin.py fails loudly on any drift. A git-submodule pin of cephios/protocol-tests is proposed for C7 (when ci.yml is opened). file_roundtrip.json added in INGEST-3a (the §17 client-side chunk->reassemble category).",
   "repo": "https://github.com/cephios/protocol-tests",
   "sha256": {
     "control_plane_erasure.json": "1c1791aee1010d39e44b1ce2032914ac27eeadde696bb4870b09ae841a2aa75f",
