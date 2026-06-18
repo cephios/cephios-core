@@ -65,6 +65,7 @@ from cephios_core.envelope import _construct_with_nonce, deconstruct
 from cephios_core.errors import CephiosError, decode_error_response
 from cephios_core.ingest import Disposition, IngestClient, bearer
 from cephios_core.keyderiv import derive_member_keys, derive_salt, derive_seed_material
+from cephios_core.uploader import chunk_plaintext, reassemble
 from cephios_core.wrapped_dek import unwrap_dek
 
 __all__ = [
@@ -92,6 +93,7 @@ THRESHOLDS: dict[str, float] = {
     "error_taxonomy": 1.0,
     "envelope_versioning": 1.0,
     "control_plane_erasure": 1.0,
+    "file_roundtrip": 1.0,  # GATED 100% - chunk->reassemble byte-identical (R-RT-GATED)
     "ingestion_idempotency": 0.90,  # the ONLY non-100% threshold (§17.3 — 10% edge-case slack)
 }
 GATED_CATEGORIES: tuple[str, ...] = tuple(THRESHOLDS)
@@ -518,6 +520,46 @@ def _one_wrapped_dek_shape(inp: Mapping[str, Any], exp: Mapping[str, Any]) -> tu
         return False, f"unexpected {type(exc).__name__}: {exc}"
 
 
+def _check_file_roundtrip(vectors: Sequence[dict[str, Any]]) -> list[VectorResult]:
+    """file_roundtrip gates the CLIENT-SIDE chunk->reassemble integrity property
+    (§9.1 ingest_mode='file' / §7.5): chunk_plaintext(file, max_chunk_bytes)
+    equals the expected per-batch plaintexts (in batch_sequence order), and
+    reassemble of those equals the input file. NO Cephios decryption — purely the
+    SDK's chunker/reassembler (R-RT-CLIENTSIDE); NOT the Phase 2 export feature.
+    GATED 100% (R-RT-GATED — fully deterministic)."""
+    out: list[VectorResult] = []
+    for v in vectors:
+        out.append(VectorResult(v["test_id"], *_one_file_roundtrip(v)))
+    return out
+
+
+def _one_file_roundtrip(v: dict[str, Any]) -> tuple[bool, str]:
+    try:
+        inp = v["input"]
+        file_bytes = bytes.fromhex(inp["file_bytes_hex"])
+        max_chunk = int(inp["chunk_params"]["max_chunk_bytes"])
+        exp = v["expected_output"]
+        # 1. Forward: chunk -> ordered per-batch plaintexts match the vector.
+        chunks = chunk_plaintext(file_bytes, max_chunk)
+        exp_batches = exp["batches"]
+        if len(chunks) != len(exp_batches):
+            return False, f"batch count {len(chunks)} != {len(exp_batches)}"
+        for i, (got, eb) in enumerate(zip(chunks, exp_batches, strict=True)):
+            if eb["batch_sequence"] != i:
+                return False, f"batch_sequence {eb['batch_sequence']} != {i}"
+            if got.hex() != eb["plaintext_hex"]:
+                return False, f"batch {i} plaintext {got.hex()} != {eb['plaintext_hex']}"
+        # 2. Inverse: reassemble in batch_sequence order == the input file.
+        reassembled = reassemble(chunks)
+        if reassembled.hex() != exp["reassembled_hex"]:
+            return False, f"reassembled {reassembled.hex()} != {exp['reassembled_hex']}"
+        if reassembled != file_bytes:
+            return False, "reassembled != input file_bytes"
+        return True, ""
+    except Exception as exc:  # noqa: BLE001
+        return False, f"unexpected {type(exc).__name__}: {exc}"
+
+
 _CHECKERS = {
     "envelope_encryption": _check_envelope_encryption,
     "envelope_versioning": _check_envelope_versioning,
@@ -527,6 +569,7 @@ _CHECKERS = {
     "error_taxonomy": _check_error_taxonomy,
     "control_plane_erasure": _check_control_plane_erasure,
     "session_lifecycle": _check_session_lifecycle,
+    "file_roundtrip": _check_file_roundtrip,
 }
 
 

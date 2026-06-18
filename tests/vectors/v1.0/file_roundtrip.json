@@ -1,0 +1,56 @@
+[
+  {
+    "test_id": "file_roundtrip_exact_multiple_001",
+    "category": "file_roundtrip",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §9.1 ingest_mode='file' + §7.5 file ingest: a finished recording whose length is an EXACT multiple of max_chunk_bytes chops into N equal plaintext batches (batch i = file[i*max_chunk_bytes : (i+1)*max_chunk_bytes]). Concatenating the per-batch plaintexts in batch_sequence order reproduces the input byte-for-byte. CLIENT-SIDE property only — chunk then reassemble; NO Cephios decryption, NOT the Phase 2 export feature (R-RT-CLIENTSIDE). 8-byte input, 4-byte chunks -> 2 batches.",
+    "input": {
+      "file_bytes_hex": "0011223344556677",
+      "chunk_params": { "max_chunk_bytes": 4 }
+    },
+    "expected_output": {
+      "batches": [
+        { "batch_sequence": 0, "plaintext_hex": "00112233" },
+        { "batch_sequence": 1, "plaintext_hex": "44556677" }
+      ],
+      "reassembled_hex": "0011223344556677"
+    },
+    "notes": "Deterministic: byte-identical or broken, no edge-case slack (R-RT-GATED, §17.3 100%). reassembled_hex MUST equal file_bytes_hex."
+  },
+  {
+    "test_id": "file_roundtrip_remainder_001",
+    "category": "file_roundtrip",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §9.1/§7.5 file ingest: a recording whose length is NOT a multiple of max_chunk_bytes produces a final short remainder batch. 10-byte input, 4-byte chunks -> batches of 4, 4, 2. Concatenation in batch_sequence order reproduces the input. Client-side only (R-RT-CLIENTSIDE).",
+    "input": {
+      "file_bytes_hex": "00010203040506070809",
+      "chunk_params": { "max_chunk_bytes": 4 }
+    },
+    "expected_output": {
+      "batches": [
+        { "batch_sequence": 0, "plaintext_hex": "00010203" },
+        { "batch_sequence": 1, "plaintext_hex": "04050607" },
+        { "batch_sequence": 2, "plaintext_hex": "0809" }
+      ],
+      "reassembled_hex": "00010203040506070809"
+    },
+    "notes": "The remainder batch (batch_sequence 2) carries the final 2 bytes; the reassembler is length-preserving."
+  },
+  {
+    "test_id": "file_roundtrip_single_chunk_001",
+    "category": "file_roundtrip",
+    "protocol_version": "1.0",
+    "description": "CONTRACT_SPEC.md §9.1/§7.5 file ingest: a recording SMALLER than max_chunk_bytes produces exactly one batch (batch_sequence 0) carrying the whole file. 3-byte input, 8-byte chunks -> 1 batch. Concatenation reproduces the input. Client-side only (R-RT-CLIENTSIDE).",
+    "input": {
+      "file_bytes_hex": "aabbcc",
+      "chunk_params": { "max_chunk_bytes": 8 }
+    },
+    "expected_output": {
+      "batches": [
+        { "batch_sequence": 0, "plaintext_hex": "aabbcc" }
+      ],
+      "reassembled_hex": "aabbcc"
+    },
+    "notes": "Single-chunk file (< chunk size): one batch, whole file. Lower bound of the chunker."
+  }
+]

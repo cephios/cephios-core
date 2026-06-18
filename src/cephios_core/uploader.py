@@ -37,9 +37,11 @@ Standing invariants (CLAUDE.md §9):
 
 from __future__ import annotations
 
+import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Final
 from uuid import UUID
 
@@ -53,6 +55,8 @@ from cephios_core.ingest import BackoffPolicy, Disposition, IngestOutcome, Suppo
 __all__ = [
     "PermanentStorageLossError",
     "capture",
+    "DEFAULT_MAX_CHUNK_BYTES",
+    "upload_file",
     "DrainSummary",
     "Uploader",
 ]
@@ -151,6 +155,98 @@ def capture(
     env = envelope.construct(dek, plaintext)
     _write_durably(buffer, session_id, batch_sequence, env)
     return env
+
+
+# ---------------------------------------------------------------------------
+# File-upload ergonomic (§9.1 ingest_mode='file' / §7.5): chop a finished
+# recording into batches over the EXISTING capture() path. NO second ingest
+# path. The §17 file_roundtrip conformance property lives on the pure
+# chunk_plaintext / reassemble pair below — client-side (chunk then reassemble
+# == input), with NO Cephios decryption; it is NOT the Phase 2 export feature.
+# ---------------------------------------------------------------------------
+
+#: Default plaintext batch size for :func:`upload_file`: 1 MiB — the §7.5
+#: throughput batch-size recommendation (~30 s at the 32 KiB/s reference rate;
+#: well within the §7.5 64 KiB–4 MiB recommended range and the 16 MiB max).
+DEFAULT_MAX_CHUNK_BYTES: Final = 1 << 20
+
+
+def chunk_plaintext(data: bytes, max_chunk_bytes: int = DEFAULT_MAX_CHUNK_BYTES) -> list[bytes]:
+    """Slice a finished recording into ordered plaintext batches of <= ``max_chunk_bytes``.
+
+    Deterministic and length-preserving: batch ``i`` is
+    ``data[i*max_chunk_bytes : (i+1)*max_chunk_bytes]`` — the batches partition
+    ``data`` in order, with a final short remainder when ``len(data)`` is not a
+    multiple of the chunk size. Empty input yields zero batches. This is the
+    forward half of the §17 ``file_roundtrip`` conformance property
+    (``reassemble(chunk_plaintext(f, n)) == f``); it is purely client-side.
+    """
+    if max_chunk_bytes < 1:
+        raise ValueError("max_chunk_bytes must be >= 1")
+    return [data[i : i + max_chunk_bytes] for i in range(0, len(data), max_chunk_bytes)]
+
+
+def reassemble(batches: Iterable[bytes]) -> bytes:
+    """Concatenate per-batch plaintexts in batch_sequence order -> the original recording.
+
+    The inverse of :func:`chunk_plaintext` (the §17 ``file_roundtrip`` property).
+    Module-internal: the §17 vector exercises it client-side; the cloud-side
+    export feature (returning the researcher's exact file via the authorization
+    gate) is Phase 2 and unrelated.
+    """
+    return b"".join(batches)
+
+
+def _read_recording(data: bytes | bytearray | str | os.PathLike[str]) -> bytes:
+    """Resolve the :func:`upload_file` source to bytes: raw bytes pass through; a
+    path (str / ``os.PathLike``) is read via :class:`pathlib.Path` — OS-agnostic,
+    no hardcoded separators, Windows-safe (G12-D5 item f)."""
+    if isinstance(data, (bytes, bytearray)):
+        return bytes(data)
+    return Path(data).read_bytes()
+
+
+def upload_file(
+    buffer: Buffer,
+    *,
+    dek: bytes,
+    session_id: UUID,
+    data: bytes | bytearray | str | os.PathLike[str],
+    max_chunk_bytes: int = DEFAULT_MAX_CHUNK_BYTES,
+) -> list[bytes]:
+    """Chop a finished recording into batches and capture each over the EXISTING
+    §7.7.1 path. Returns the constructed envelope bytes per batch (batch_sequence
+    order).
+
+    ``data`` is the finished recording — raw ``bytes`` or a filesystem path (read
+    with pathlib). ``dek`` is the ALREADY-unwrapped 32-byte session DEK; this
+    helper does NOT unwrap (the Model-B unwrap is
+    :func:`cephios_core.wrapped_dek.unwrap_dek` over the
+    :func:`cephios_core.keyderiv.derive_member_keys` private key — the caller's
+    responsibility, matching :func:`capture`'s contract).
+
+    NOT a second ingest path: the recording is sliced by :func:`chunk_plaintext`
+    and each chunk is handed to :func:`capture` with ``batch_sequence`` = 0..N-1,
+    so every batch is AES-256-GCM-encrypted BEFORE the durable-buffer write (KC /
+    Model C, §9.8) and delivered by the existing :class:`Uploader` over
+    ``POST /v1/ingest`` (§7.7.4). Plaintext is never at rest on local disk and
+    never reaches the wire (PT, §9.4). ``ingest_mode`` ('file') is a
+    session-level provenance label declared at session open (§9.1), not a
+    per-batch wire field.
+    """
+    plaintext = _read_recording(data)
+    envelopes: list[bytes] = []
+    for batch_sequence, chunk in enumerate(chunk_plaintext(plaintext, max_chunk_bytes)):
+        envelopes.append(
+            capture(
+                buffer,
+                dek=dek,
+                session_id=session_id,
+                batch_sequence=batch_sequence,
+                plaintext=chunk,
+            )
+        )
+    return envelopes
 
 
 # ---------------------------------------------------------------------------

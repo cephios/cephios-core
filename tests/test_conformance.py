@@ -41,6 +41,7 @@ def test_thresholds_mirror_section_17_3():
         "error_taxonomy": 1.0,
         "envelope_versioning": 1.0,
         "control_plane_erasure": 1.0,
+        "file_roundtrip": 1.0,  # §17.3 GATED 100% (R-RT-GATED) — client-side chunk->reassemble
         "ingestion_idempotency": 0.90,  # the ONLY non-100% threshold
     }
     # session_lifecycle is in §17.1 structure but NOT a §17.3 gated criterion.

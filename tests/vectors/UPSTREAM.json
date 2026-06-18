@@ -1,12 +1,13 @@
 {
   "commit": "9c195db40307c6dce962279e1974b87702b54f25",
-  "note": "Vendored copy of the published Cephios Protocol v1.0 conformance suite, pinned by SHA-256. test_vector_pin.py fails loudly on any drift. A git-submodule pin of cephios/protocol-tests is proposed for C7 (when ci.yml is opened).",
+  "note": "Vendored copy of the published Cephios Protocol v1.0 conformance suite, pinned by SHA-256. test_vector_pin.py fails loudly on any drift. A git-submodule pin of cephios/protocol-tests is proposed for C7 (when ci.yml is opened). file_roundtrip.json added in INGEST-3a (the §17 client-side chunk->reassemble category); the `commit` field above still pins the prior protocol-tests SHA and is a Founder-operational update to the new protocol-tests INGEST-3a commit SHA once that repo's commit lands.",
   "repo": "https://github.com/cephios/protocol-tests",
   "sha256": {
     "control_plane_erasure.json": "1c1791aee1010d39e44b1ce2032914ac27eeadde696bb4870b09ae841a2aa75f",
     "envelope_encryption.json": "6f22e43d570bb6a9c1ed192d6fd387a49eb0e3326b202851ce6e107f643b6441",
     "envelope_versioning.json": "bddb1a1eea33264d2bbfdc99c40a2e883ebf6965821d43b912233bff37d37f61",
     "error_taxonomy.json": "182d305df83d571e464b6ce36fd329364173a33acb47f8ba59789754183789f8",
+    "file_roundtrip.json": "cec0034c7b19aa080dd09acc72a2fc290c1311379fb8813ad19b75fa9c9a3e76",
     "ingestion_idempotency.json": "909eef96f877da10cabcb0d6fbdb839571aad5a0d7f285d6c521abafac637755",
     "key_derivation.json": "f8e5b08908b4a8b5f52f774bf5ee2d8bc4e0d9cc12c76a7bb5785a7ffd6186a5",
     "session_lifecycle.json": "3a631098eb2c41f28506e50faa43ebc4ad86520bbeef42c2cd15afbbf800c23a",
