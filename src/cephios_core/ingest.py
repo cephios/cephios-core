@@ -120,7 +120,7 @@ def _validate_base_url(base_url: str, allow_insecure_http: bool) -> None:
 
 # §7.2 / §15.1 WIRE protocol version. Pinned here as the SINGLE source of truth and sent in
 # X-Cephios-API-Version. This is the wire version (`1.0`), decoupled per §15.6 from the
-# CONTRACT_SPEC document revision (currently 1.5) — the document revisions that introduced
+# CONTRACT_SPEC document revision (tracked in INDEX.md §6) — the document revisions that introduced
 # §7.7 / BufferRejected did NOT move this. Do NOT derive it from a doc-revision counter.
 WIRE_API_VERSION: Final = "1.0"
 
