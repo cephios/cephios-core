@@ -38,3 +38,21 @@ def test_wrap_unwrap_roundtrip():
     assert len(env) == 76
     assert unwrap_dek(env, priv_bytes) == dek
     assert wrap_dek(pub_bytes, dek) != env  # non-deterministic
+
+
+def test_unwrap_low_order_ephemeral_raises_typed_malformed():
+    # #4 typed-error enforcement: a wrapped-DEK envelope with valid magic/version but an
+    # all-zero (low-order) ephemeral public key makes the X25519 exchange raise a bare
+    # ValueError; unwrap_dek must surface the typed EnvelopeError('malformed') (§6.5/§14),
+    # not let the ValueError escape.
+    priv = X25519PrivateKey.generate()
+    priv_bytes = priv.private_bytes_raw()
+    pub_bytes = priv.public_key().public_bytes_raw()
+    env = bytearray(wrap_dek(pub_bytes, b"\x42" * 32))  # a valid 76-byte envelope
+    env[4:36] = b"\x00" * 32  # replace the ephemeral pubkey with an all-zero low-order point
+    with pytest.raises(EnvelopeError) as exc:
+        unwrap_dek(bytes(env), priv_bytes)
+    assert exc.value.code == "malformed"
+    # a valid wrapped-DEK envelope still unwraps (no regression)
+    valid = wrap_dek(pub_bytes, b"\x42" * 32)
+    assert unwrap_dek(valid, priv_bytes) == b"\x42" * 32

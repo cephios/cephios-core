@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 
 import pytest
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from cephios_core.envelope import _construct_with_nonce, construct, deconstruct
 from cephios_core.errors import EnvelopeError, VersionError
@@ -38,6 +39,34 @@ def test_nonce_seam_not_reachable_from_default():
     # production construct() has no nonce parameter; the deterministic seam is separate
     assert "nonce" not in inspect.signature(construct).parameters
     assert "nonce" in inspect.signature(_construct_with_nonce).parameters
+
+
+def test_construct_rejects_non_32_byte_dek():
+    # #1 downgrade footgun: a 16-byte DEK must be REJECTED, not silently encrypted under
+    # AES-128 while the header still advertises alg_id=0x01 (AES-256). The guard lives at the
+    # single _construct_with_nonce encryption chokepoint, so construct() is covered too.
+    short_dek = b"\x42" * 16
+    with pytest.raises(ValueError, match="dek must be 32 bytes"):
+        _construct_with_nonce(short_dek, b"plaintext", b"\x00" * 12)
+    with pytest.raises(ValueError, match="dek must be 32 bytes"):
+        construct(short_dek, b"plaintext")
+    # a valid 32-byte DEK still constructs (no regression)
+    assert len(construct(b"\x42" * 32, b"plaintext")) > 0
+
+
+def test_deconstruct_rejects_non_32_byte_dek():
+    # #1 import/replay side: an envelope AES-128-encrypted under a 16-byte DEK (but carrying
+    # alg_id=0x01) must be REJECTED at deconstruct, not silently AES-128-decrypted. The guard
+    # fires before the AES-256-GCM decrypt.
+    short_dek = b"\x42" * 16
+    nonce = b"\x00" * 12
+    header = b"\xce\x0f\x01\x01" + nonce  # alg_id=0x01 header, but the body is AES-128
+    aes128_env = header + AESGCM(short_dek).encrypt(nonce, b"plaintext", header)
+    with pytest.raises(ValueError, match="dek must be 32 bytes"):
+        deconstruct(aes128_env, short_dek)
+    # a valid 32-byte-DEK envelope still deconstructs (no regression)
+    dek32 = b"\x42" * 32
+    assert deconstruct(construct(dek32, b"plaintext"), dek32) == b"plaintext"
 
 
 # (category, test_id, error_type, expected_code) — each §6.5 disposition in isolation.

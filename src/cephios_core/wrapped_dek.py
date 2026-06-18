@@ -58,6 +58,12 @@ def unwrap_dek(wrap_envelope: bytes, recipient_private_key: bytes) -> bytes:
 
     Deterministic on ``(wrap_envelope, recipient_private_key)`` — every conformant
     implementation unwraps the fixed reference envelope to the same DEK.
+
+    Every malformed-envelope path raises a typed ``EnvelopeError`` (§6.5/§14): bad
+    magic/length/version, or an invalid/low-order ephemeral public key (which makes the
+    X25519 exchange raise a bare ``ValueError``) -> 'malformed'; an AES-KW integrity failure
+    -> 'authentication_failed'. The recipient's own private key is a caller precondition and
+    stays outside this typed-error scope.
     """
     if len(wrap_envelope) != _WRAP_ENVELOPE_SIZE or wrap_envelope[0:2] != WRAP_MAGIC:
         raise EnvelopeError("malformed", "wrapped-DEK envelope magic/length invalid")
@@ -67,12 +73,16 @@ def unwrap_dek(wrap_envelope: bytes, recipient_private_key: bytes) -> bytes:
     wrapped_dek = wrap_envelope[_WRAPPED_DEK_OFFSET:]
     private_key = X25519PrivateKey.from_private_bytes(recipient_private_key)
     recipient_public_key = private_key.public_key().public_bytes_raw()
-    shared_secret = private_key.exchange(X25519PublicKey.from_public_bytes(ephemeral_public_key))
-    kek = _wrap_kek(shared_secret, recipient_public_key, ephemeral_public_key)
     try:
+        shared_secret = private_key.exchange(
+            X25519PublicKey.from_public_bytes(ephemeral_public_key)
+        )
+        kek = _wrap_kek(shared_secret, recipient_public_key, ephemeral_public_key)
         return aes_key_unwrap(kek, wrapped_dek)
     except InvalidUnwrap:
         raise EnvelopeError("authentication_failed", "AES-KW integrity check failed") from None
+    except ValueError as exc:
+        raise EnvelopeError("malformed", "wrapped-DEK ephemeral public key invalid") from exc
 
 
 def wrap_dek(recipient_public_key: bytes, dek: bytes) -> bytes:
