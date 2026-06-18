@@ -52,6 +52,7 @@ from cephios_core.ingest import (
     WIRE_API_VERSION,
     Credential,
     _AsyncBridge,
+    _validate_base_url,
 )
 
 __all__ = [
@@ -277,7 +278,9 @@ class AsyncControlClient:
         api_version: str = WIRE_API_VERSION,
         transport: httpx.AsyncBaseTransport | None = None,
         timeout: float = 30.0,
+        allow_insecure_http: bool = False,
     ) -> None:
+        _validate_base_url(base_url, allow_insecure_http)
         self._credential = credential
         self._api_version = api_version
         self._client = httpx.AsyncClient(
@@ -448,15 +451,19 @@ class ControlClient:
         api_version: str = WIRE_API_VERSION,
         transport: httpx.AsyncBaseTransport | None = None,
         timeout: float = 30.0,
+        allow_insecure_http: bool = False,
     ) -> None:
-        self._bridge = _AsyncBridge()
+        # Construct (and validate base_url via) the async client FIRST, so a rejected base_url
+        # raises before the _AsyncBridge loop thread starts — no orphaned daemon thread.
         self._async = AsyncControlClient(
             credential=credential,
             base_url=base_url,
             api_version=api_version,
             transport=transport,
             timeout=timeout,
+            allow_insecure_http=allow_insecure_http,
         )
+        self._bridge = _AsyncBridge()
 
     def open_session(
         self,

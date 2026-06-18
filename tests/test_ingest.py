@@ -14,6 +14,7 @@ pytest-asyncio) and adds no dev/runtime dependency beyond httpx.
 from __future__ import annotations
 
 import asyncio
+import logging
 from uuid import UUID
 
 import httpx
@@ -302,3 +303,48 @@ def test_async_core_directly():
 
     outcome = asyncio.run(go())
     assert outcome.disposition is Disposition.ACK
+
+
+# ---------------------------------------------------------------------------
+# #5 base_url https enforcement (with a narrow opt-in) — both clients.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("client_cls", [AsyncIngestClient, IngestClient])
+def test_base_url_rejects_http_by_default(client_cls):
+    # #5: a non-https base_url silently sent the Bearer token / ApiKey in cleartext; it is now
+    # rejected at construction with no opt-in. Covers the async client AND the sync facade.
+    with pytest.raises(ValueError, match="must use https"):
+        client_cls(credential=bearer("t"), base_url="http://evil.test")
+
+
+@pytest.mark.parametrize("client_cls", [AsyncIngestClient, IngestClient])
+def test_base_url_opt_in_never_allows_production_http(client_cls):
+    # ABSOLUTE RULE: allow_insecure_http never permits cleartext to the production host —
+    # catches "opt-in enabled for local testing, then pointed at prod".
+    with pytest.raises(ValueError, match="production host"):
+        client_cls(
+            credential=bearer("t"), base_url="http://api.cephios.com", allow_insecure_http=True
+        )
+
+
+def test_base_url_opt_in_allows_non_prod_http_with_warning(caplog):
+    # opt-in permits http to a NON-production self-hosted host (§7.1), but NEVER silently.
+    with caplog.at_level(logging.WARNING):
+        client = IngestClient(
+            credential=bearer("t"), base_url="http://localhost:8080", allow_insecure_http=True
+        )
+    try:
+        assert any("insecure http" in r.getMessage().lower() for r in caplog.records)
+    finally:
+        client.close()
+
+
+def test_base_url_https_accepted_without_warning(caplog):
+    # https (default prod or a self-hosted https endpoint) is always OK, no opt-in, no warning.
+    with caplog.at_level(logging.WARNING):
+        client = IngestClient(credential=bearer("t"), base_url="https://self-hosted.example.com")
+    try:
+        assert caplog.records == []
+    finally:
+        client.close()

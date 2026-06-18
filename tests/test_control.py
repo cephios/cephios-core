@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import uuid
 from typing import Any
@@ -428,3 +429,46 @@ def test_version_error_decodes_from_426():
         with pytest.raises(VersionError) as excinfo:
             client.read_session(uuid.uuid4())
         assert excinfo.value.http_status == 426
+
+
+# ---------------------------------------------------------------------------
+# #5 base_url https enforcement (with a narrow opt-in) — both clients.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("client_cls", [AsyncControlClient, ControlClient])
+def test_base_url_rejects_http_by_default(client_cls):
+    # #5: a non-https base_url silently sent the Bearer token in cleartext; now rejected at
+    # construction with no opt-in. Covers the async client AND the sync facade.
+    with pytest.raises(ValueError, match="must use https"):
+        client_cls(credential=bearer("t"), base_url="http://evil.test")
+
+
+@pytest.mark.parametrize("client_cls", [AsyncControlClient, ControlClient])
+def test_base_url_opt_in_never_allows_production_http(client_cls):
+    # ABSOLUTE RULE: allow_insecure_http never permits cleartext to the production host.
+    with pytest.raises(ValueError, match="production host"):
+        client_cls(
+            credential=bearer("t"), base_url="http://api.cephios.com", allow_insecure_http=True
+        )
+
+
+def test_base_url_opt_in_allows_non_prod_http_with_warning(caplog):
+    # opt-in permits http to a NON-production self-hosted host (§7.1), but NEVER silently.
+    with caplog.at_level(logging.WARNING):
+        client = ControlClient(
+            credential=bearer("t"), base_url="http://localhost:8080", allow_insecure_http=True
+        )
+    try:
+        assert any("insecure http" in r.getMessage().lower() for r in caplog.records)
+    finally:
+        client.close()
+
+
+def test_base_url_https_accepted_without_warning(caplog):
+    with caplog.at_level(logging.WARNING):
+        client = ControlClient(credential=bearer("t"), base_url="https://self-hosted.example.com")
+    try:
+        assert caplog.records == []
+    finally:
+        client.close()

@@ -40,12 +40,14 @@ Standing invariants (CLAUDE.md §9):
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from collections.abc import Coroutine
 from dataclasses import dataclass
 from enum import Enum
 from types import TracebackType
 from typing import Any, Final, Protocol, TypeVar
+from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
@@ -78,6 +80,43 @@ __all__ = [
 # the production cloud.
 DEFAULT_BASE_URL: Final = "https://api.cephios.com"
 INGEST_PATH: Final = "/v1/ingest"
+
+_log = logging.getLogger(__name__)
+
+#: The production host (the :data:`DEFAULT_BASE_URL` host) — cleartext to it is NEVER permitted,
+#: not even under ``allow_insecure_http``. Derived so it tracks ``DEFAULT_BASE_URL``.
+_PRODUCTION_HOST: Final[str] = urlsplit(DEFAULT_BASE_URL).hostname or "api.cephios.com"
+
+
+def _validate_base_url(base_url: str, allow_insecure_http: bool) -> None:
+    """Enforce the §7.1 / §9.8 transport-security policy on a client ``base_url`` (security #5).
+
+    ``https`` is always accepted. A non-``https`` scheme — including a missing or malformed one —
+    is REJECTED at construction unless ``allow_insecure_http`` is set; and even then cleartext to
+    the production host (:data:`_PRODUCTION_HOST`) is ALWAYS rejected. The opt-in only ever permits
+    ``http`` to a non-production / self-hosted endpoint (§7.1 allows a configurable base URL), and
+    only with a ``logging.warning`` — never silently. Scheme and host are parsed with
+    :func:`urllib.parse.urlsplit`, so userinfo / port tricks cannot smuggle the production host
+    past the check (e.g. ``http://x@api.cephios.com`` resolves to host ``api.cephios.com``).
+    """
+    parts = urlsplit(base_url)
+    if parts.scheme == "https":
+        return
+    if not allow_insecure_http:
+        raise ValueError(
+            f"base_url must use https (got {base_url!r}); pass allow_insecure_http=True to "
+            "permit http only to a non-production self-hosted endpoint"
+        )
+    if parts.hostname == _PRODUCTION_HOST:
+        raise ValueError(
+            f"refusing cleartext http to the production host {_PRODUCTION_HOST!r}: "
+            f"allow_insecure_http never permits http to production (got {base_url!r})"
+        )
+    _log.warning(
+        "cephios client using INSECURE http base_url %r (allow_insecure_http=True); the session "
+        "token / ApiKey is sent in cleartext — use only for local or self-hosted testing",
+        base_url,
+    )
 
 # §7.2 / §15.1 WIRE protocol version. Pinned here as the SINGLE source of truth and sent in
 # X-Cephios-API-Version. This is the wire version (`1.0`), decoupled per §15.6 from the
@@ -252,7 +291,9 @@ class AsyncIngestClient:
         api_version: str = WIRE_API_VERSION,
         transport: httpx.AsyncBaseTransport | None = None,
         timeout: float = 30.0,
+        allow_insecure_http: bool = False,
     ) -> None:
+        _validate_base_url(base_url, allow_insecure_http)
         self._credential = credential
         self._api_version = api_version
         self._client = httpx.AsyncClient(
@@ -398,15 +439,19 @@ class IngestClient:
         api_version: str = WIRE_API_VERSION,
         transport: httpx.AsyncBaseTransport | None = None,
         timeout: float = 30.0,
+        allow_insecure_http: bool = False,
     ) -> None:
-        self._bridge = _AsyncBridge()
+        # Construct (and validate base_url via) the async client FIRST, so a rejected base_url
+        # raises before the _AsyncBridge loop thread starts — no orphaned daemon thread.
         self._async = AsyncIngestClient(
             credential=credential,
             base_url=base_url,
             api_version=api_version,
             transport=transport,
             timeout=timeout,
+            allow_insecure_http=allow_insecure_http,
         )
+        self._bridge = _AsyncBridge()
 
     def ingest(self, session_id: UUID, batch_sequence: int, envelope: bytes) -> IngestOutcome:
         """Synchronously POST one envelope (§7.2) and return its classified outcome."""
