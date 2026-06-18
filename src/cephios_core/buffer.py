@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import enum
 import logging
+import os
 import threading
 import time
 from collections.abc import Callable
@@ -416,6 +417,7 @@ class Buffer:
                 conn = apsw.Connection(path)
                 self._conn = conn
                 self._apply_pragmas()
+                self._restrict_file_modes(path)
                 return
             except apsw.IOError as exc:
                 # Close any half-opened handle so a partial connection does not accumulate; a
@@ -452,6 +454,27 @@ class Buffer:
         self._conn.execute("PRAGMA synchronous=FULL")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.execute("PRAGMA busy_timeout=5000")
+
+    def _restrict_file_modes(self, path: str) -> None:
+        """Restrict the buffer DB + its ``-wal``/``-shm`` side files to owner-only (0o600) on POSIX.
+
+        apsw/SQLite create the main DB under the process umask (typically 0o644 — world-readable)
+        and the ``-wal``/``-shm`` side files at WAL activation (``PRAGMA journal_mode=WAL`` in
+        :meth:`_apply_pragmas`), so this runs AFTER the pragmas, once all three exist, and
+        re-asserts the mode on every open (a buffer created before this hardening is tightened on
+        its next open). The buffer holds only ciphertext (KC, §7.7.1); 0o600 additionally denies
+        other local users the ``session_id`` / ``batch_sequence`` / enqueue-time METADATA.
+
+        Setting modes only — no buffer semantics change. POSIX-only: on Windows
+        (``os.name == "nt"``) file access is governed by ACLs and ``chmod`` is a no-op, so this is
+        skipped and the buffer opens normally either way.
+        """
+        if os.name == "nt":
+            return
+        for sidecar in ("", "-wal", "-shm"):
+            file = Path(path + sidecar)
+            if file.exists():
+                file.chmod(0o600)
 
     def _read_pragma(self, name: str) -> object:
         """Read a PRAGMA value off THIS buffer's production connection (introspection / proof).

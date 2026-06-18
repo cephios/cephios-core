@@ -15,6 +15,7 @@ test_buffer_nd.py.
 
 from __future__ import annotations
 
+import os
 import threading
 import uuid
 
@@ -515,3 +516,21 @@ def test_methods_raise_after_close(tmp_path):
         buf.pending()
     with pytest.raises(BufferClosedError):
         buf.acknowledge(sid, 0)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes; Windows uses ACLs, not chmod")
+def test_buffer_files_are_owner_only_0o600(tmp_path):
+    # #3: the SQLite DB and its -wal/-shm side files must be owner-only (0o600). The buffer
+    # holds only ciphertext (KC §7.7.1), but world-readable files leak session_id /
+    # batch_sequence / enqueue-time METADATA to other local users on a multi-user machine.
+    # The -wal/-shm coverage is the load-bearing part: they are created at WAL activation.
+    buf, _ = _open(tmp_path)
+    try:
+        buf.write(_sid(), 0, _env(0))  # exercise a write so the WAL sidecars are populated
+        for suffix in ("", "-wal", "-shm"):
+            p = tmp_path / ("buffer.db" + suffix)
+            assert p.exists(), f"{p.name} should exist after a WAL write"
+            mode = p.stat().st_mode & 0o777
+            assert mode & 0o077 == 0, f"{p.name} mode {oct(mode)} not owner-only (want 0o600)"
+    finally:
+        buf.close()
