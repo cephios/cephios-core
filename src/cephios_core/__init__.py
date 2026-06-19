@@ -7,4 +7,4 @@ implemented in subsequent Group 12 commits; this scaffold deliberately exposes n
 beyond the version so the public API can be added deliberately under the IS commitment.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
