@@ -83,7 +83,7 @@ def test_five_required_headers_and_raw_octet_body():
     # The five required §7.2 headers, exact values.
     assert req.headers["Content-Type"] == OCTET_STREAM
     assert req.headers["Authorization"] == "Bearer session-token-xyz"
-    assert req.headers[HEADER_API_VERSION] == "1.0"
+    assert req.headers[HEADER_API_VERSION] == "1.1"
     assert req.headers[HEADER_SESSION_ID] == str(_SID)
     assert req.headers[HEADER_BATCH_SEQUENCE] == "7"
     # Body is the RAW envelope bytes — no JSON wrapper, no base64 (§7.2).
@@ -132,8 +132,8 @@ def test_request_matches_ingestion_persisted_vector():
     assert req.headers["Authorization"].startswith("Bearer ")
 
 
-def test_wire_version_is_pinned_to_1_0():
-    assert WIRE_API_VERSION == "1.0"  # the wire version (§15.6), not a document revision
+def test_wire_version_is_pinned_to_1_1():
+    assert WIRE_API_VERSION == "1.1"  # the wire version (§15.6), not a document revision
 
 
 def test_negative_batch_sequence_rejected():

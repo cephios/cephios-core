@@ -122,7 +122,7 @@ def test_session_open_request_and_response_match_vector():
     assert rec.request.url.path == "/v1/sessions"
     assert rec.request.headers["Content-Type"] == "application/json"
     assert rec.request.headers["Authorization"] == "Bearer session-token"
-    assert rec.request.headers["X-Cephios-API-Version"] == "1.0"  # §15.1 (vector omits it)
+    assert rec.request.headers["X-Cephios-API-Version"] == "1.1"  # §15.1 (vector omits it)
     assert json.loads(rec.request.content) == req_body  # fully concrete body == vector
     # (2) response decode.
     assert opened.session_id == uuid.UUID(resp_body["session_id"])

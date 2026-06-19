@@ -2,7 +2,7 @@
 
 The JSON, non-data-path counterpart to the §7 binary ingest client. It reuses the Commit 5a
 transport primitives (the ``_AsyncBridge`` event-loop thread, the ``Credential`` /
-``Authorization`` header, ``X-Cephios-API-Version`` pinned to the wire ``1.0``, httpx with its
+``Authorization`` header, ``X-Cephios-API-Version`` pinned to the wire ``1.1``, httpx with its
 default certificate verification) and layers the §8 / §9 / §10.5 request shapes + typed response
 decoding on top. Async-first + sync facade, exactly as Commit 5a: :class:`AsyncControlClient` is
 the real implementation; :class:`ControlClient` runs it on the private loop thread.
