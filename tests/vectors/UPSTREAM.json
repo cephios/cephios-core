@@ -8,7 +8,7 @@
     "envelope_versioning.json": "bddb1a1eea33264d2bbfdc99c40a2e883ebf6965821d43b912233bff37d37f61",
     "error_taxonomy.json": "182d305df83d571e464b6ce36fd329364173a33acb47f8ba59789754183789f8",
     "file_roundtrip.json": "cec0034c7b19aa080dd09acc72a2fc290c1311379fb8813ad19b75fa9c9a3e76",
-    "ingestion_idempotency.json": "909eef96f877da10cabcb0d6fbdb839571aad5a0d7f285d6c521abafac637755",
+    "ingestion_idempotency.json": "171949d5b0d9948d249f1b9674821deaf5e4a67cc04a48b13feea48f49401f53",
     "key_derivation.json": "f8e5b08908b4a8b5f52f774bf5ee2d8bc4e0d9cc12c76a7bb5785a7ffd6186a5",
     "session_lifecycle.json": "3a631098eb2c41f28506e50faa43ebc4ad86520bbeef42c2cd15afbbf800c23a",
     "wrapped_dek.json": "b80d355b0966e1098a7ae54267e3f4235caad9ec97ffc7fb16a77ae16f1f0ef2"

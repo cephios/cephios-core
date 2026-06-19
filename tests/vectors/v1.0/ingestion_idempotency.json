@@ -8,7 +8,7 @@
       "request": {
         "method": "POST",
         "path": "/v1/ingest",
-        "headers": { "Content-Type": "application/octet-stream", "X-Cephios-API-Version": "1.0", "X-Cephios-Session-Id": "018f0c00-0000-7000-8000-000000000001", "X-Cephios-Batch-Sequence": "0" },
+        "headers": { "Content-Type": "application/octet-stream", "X-Cephios-API-Version": "1.1", "X-Cephios-Session-Id": "018f0c00-0000-7000-8000-000000000001", "X-Cephios-Batch-Sequence": "0" },
         "body_hex": "ce0f010104050607080910111213141516010203040506070809101112131415ff"
       }
     },
@@ -30,7 +30,7 @@
       "request": {
         "method": "POST",
         "path": "/v1/ingest",
-        "headers": { "Content-Type": "application/octet-stream", "X-Cephios-API-Version": "1.0", "X-Cephios-Session-Id": "018f0c00-0000-7000-8000-000000000001", "X-Cephios-Batch-Sequence": "0" },
+        "headers": { "Content-Type": "application/octet-stream", "X-Cephios-API-Version": "1.1", "X-Cephios-Session-Id": "018f0c00-0000-7000-8000-000000000001", "X-Cephios-Batch-Sequence": "0" },
         "body_hex": "ce0f010104050607080910111213141516010203040506070809101112131415ff",
         "preconditions": ["ingestion_persisted_001 was already accepted for this (session_id, batch_sequence)"]
       }
